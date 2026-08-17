@@ -252,16 +252,31 @@ jobs:
           SOURCE_TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$SOURCE_TAG" release/*.deb release/SHA256SUMS \
-              --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --title "llama.cpp ${SOURCE_TAG} Debian packages" \
-              --notes-file release/RELEASE_NOTES.md
-          else
-            gh release create "$SOURCE_TAG" release/*.deb release/SHA256SUMS \
+
+          retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 10))
+              fi
+            done
+            return 1
+          }
+
+          if ! gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if ! retry gh release create "$SOURCE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "llama.cpp ${SOURCE_TAG} Debian packages" \
-              --notes-file release/RELEASE_NOTES.md
+              --title "llama.cpp ${SOURCE_TAG} Debian packages"; then
+              gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+            fi
           fi
+
+          retry gh release upload "$SOURCE_TAG" release/*.deb release/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          retry gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "llama.cpp ${SOURCE_TAG} Debian packages" \
+            --notes-file release/RELEASE_NOTES.md
