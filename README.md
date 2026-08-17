@@ -4,6 +4,40 @@ Debian repackaging for the ordinary amd64 and arm64 releases produced by
 [`openresearchtools/llama-cpp-arm64-builds`](https://github.com/openresearchtools/llama-cpp-arm64-builds).
 TurboQuant releases are deliberately excluded.
 
+## Install on Debian 13+ or Ubuntu 24.04/26.04+
+
+For the first Open Research Tools installation on a system, this one command
+adds the archive key and repository and installs the Vulkan package:
+
+```sh
+wget -qO /tmp/openresearchtools-archive-keyring.deb https://apt.openresearchtools.com/apt/releases/download/repo/openresearchtools-archive-keyring.deb && sudo apt install -y /tmp/openresearchtools-archive-keyring.deb && sudo apt update && sudo apt install -y llama-cpp
+```
+
+If the Open Research Tools APT repository is already configured:
+
+```sh
+sudo apt install llama-cpp
+```
+
+APT selects the amd64 or arm64 package matching the system automatically.
+
+The CUDA build is an alternative package, not an additional package. For a
+first Open Research Tools installation using CUDA:
+
+```sh
+wget -qO /tmp/openresearchtools-archive-keyring.deb https://apt.openresearchtools.com/apt/releases/download/repo/openresearchtools-archive-keyring.deb && sudo apt install -y /tmp/openresearchtools-archive-keyring.deb && sudo apt update && sudo apt install -y llama-cpp-cuda
+```
+
+If the repository is already configured:
+
+```sh
+sudo apt install llama-cpp-cuda
+```
+
+Install NVIDIA CUDA 13.x and a compatible NVIDIA driver on the system before
+installing `llama-cpp-cuda`. With the CUDA 13.x package source configured, APT
+can resolve the package's CUDA runtime dependencies normally.
+
 ## Packages
 
 | Package | Architecture | Source asset | Backends |
@@ -30,6 +64,8 @@ packages declare their Vulkan loader dependency. The CUDA packages declare the
 CUDA 13 ABI dependencies `libcudart.so.13` and `libcublas.so.13`; NVIDIA's
 13.2, 13.3, and later CUDA 13.x packages satisfy those virtual dependencies. A
 compatible NVIDIA driver that provides `libcuda.so.1` is also required.
+The CUDA package is not self-contained and does not install NVIDIA's CUDA
+repository.
 
 ## APT-safe versions
 
