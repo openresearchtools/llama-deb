@@ -82,6 +82,18 @@ for architecture in amd64 arm64; do
     assert_equal '0.0.10453-2' "$(dpkg-deb -f "$deb" Version)" "$architecture $flavor version"
     assert_equal "$architecture" "$(dpkg-deb -f "$deb" Architecture)" "$architecture $flavor architecture"
     assert_equal 'b10453' "$(dpkg-deb -f "$deb" X-Upstream-Tag)" "$architecture $flavor upstream tag"
+    dependencies=$(dpkg-deb -f "$deb" Depends)
+    if [[ $flavor == cuda ]]; then
+      grep -Fq 'libcudart.so.13' <<<"$dependencies"
+      grep -Fq 'libcublas.so.13' <<<"$dependencies"
+      if grep -Fq 'cuda-cudart-13-' <<<"$dependencies"; then
+        echo 'CUDA dependencies must target the SONAME major, not a CUDA minor release' >&2
+        exit 1
+      fi
+    fi
+    if [[ $architecture == arm64 ]]; then
+      grep -Fq 'libstdc++6 (>= 14)' <<<"$dependencies"
+    fi
 
     unpacked=$temporary_directory/unpacked-$architecture-$flavor
     dpkg-deb -x "$deb" "$unpacked"

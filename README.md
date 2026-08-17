@@ -27,8 +27,9 @@ not in the package name. This avoids redundant names such as
 These are binary repackages, not source builds. The amd64 files come from the
 Ubuntu 24.04 builds; arm64 files come from the Debian Trixie builds. The Vulkan
 packages declare their Vulkan loader dependency. The CUDA packages declare the
-CUDA 13.2 runtime packages from NVIDIA's matching repository; a compatible
-NVIDIA driver that provides `libcuda.so.1` is also required.
+CUDA 13 ABI dependencies `libcudart.so.13` and `libcublas.so.13`; NVIDIA's
+13.2, 13.3, and later CUDA 13.x packages satisfy those virtual dependencies. A
+compatible NVIDIA driver that provides `libcuda.so.1` is also required.
 
 ## APT-safe versions
 

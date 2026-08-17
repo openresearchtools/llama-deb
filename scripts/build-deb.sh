@@ -80,10 +80,12 @@ version=$("$script_dir/debian-version.sh" "$tag" "$revision")
 case $architecture in
   amd64)
     executable_format='ELF 64-bit LSB.*x86-64'
+    libstdcpp_dependency='libstdc++6 (>= 13.1)'
     source_platform='Ubuntu 24.04 amd64'
     ;;
   arm64)
     executable_format='ELF 64-bit LSB.*ARM aarch64'
+    libstdcpp_dependency='libstdc++6 (>= 14)'
     source_platform='Debian Trixie arm64'
     ;;
   *)
@@ -98,7 +100,7 @@ case $flavor in
     conflicting_package='llama-cpp-cuda, llama-cpp-amd64, llama-cpp-arm64'
     provides_field='Provides: llama-cpp-vulkan'
     backend_library=libggml-vulkan.so
-    runtime_field='Depends: libc6 (>= 2.38), libgcc-s1 (>= 3.4), libgomp1 (>= 6), libstdc++6 (>= 13.1), libvulkan1 (>= 1.2.131.2)'
+    runtime_field="Depends: libc6 (>= 2.38), libgcc-s1 (>= 3.4), libgomp1 (>= 6), $libstdcpp_dependency, libvulkan1 (>= 1.2.131.2)"
     package_summary='llama.cpp command-line tools with CPU and Vulkan backends'
     package_detail="This package contains the ordinary $source_platform llama.cpp build with all bundled CPU variants, the Vulkan backend, tools, server, and RPC server."
     ;;
@@ -107,7 +109,7 @@ case $flavor in
     conflicting_package='llama-cpp, llama-cpp-cuda-amd64, llama-cpp-cuda-arm64'
     provides_field='Provides: llama-cpp'
     backend_library=libggml-cuda.so
-    runtime_field='Depends: libc6 (>= 2.38), libgcc-s1 (>= 3.4), libgomp1 (>= 6), libstdc++6 (>= 13.1), cuda-cudart-13-2, libcublas-13-2'
+    runtime_field="Depends: libc6 (>= 2.38), libgcc-s1 (>= 3.4), libgomp1 (>= 6), $libstdcpp_dependency, libcudart.so.13, libcublas.so.13"
     package_summary='llama.cpp command-line tools with CPU and CUDA 13 backends'
     package_detail="This package contains the ordinary $source_platform llama.cpp CUDA 13 build with all bundled CPU variants, tools, server, and RPC server. An NVIDIA driver providing libcuda.so.1 is also required at runtime."
     ;;
