@@ -1,0 +1,248 @@
+name: Repackage llama.cpp amd64 builds
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: Ordinary llama.cpp build tag (for example b10453); blank selects latest
+        required: false
+        type: string
+      package_revision:
+        description: Debian packaging revision; blank uses packaging/revision
+        required: false
+        type: string
+      force:
+        description: Rebuild and replace matching release assets
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: repackage-llama-cpp-amd64
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPOSITORY: openresearchtools/llama-cpp-arm64-builds
+
+jobs:
+  resolve:
+    name: Resolve ordinary upstream release
+    runs-on: ubuntu-24.04
+    outputs:
+      package_revision: ${{ steps.resolve.outputs.package_revision }}
+      published_epoch: ${{ steps.resolve.outputs.published_epoch }}
+      should_build: ${{ steps.resolve.outputs.should_build }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Resolve source and target assets
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_REVISION: ${{ inputs.package_revision }}
+          REQUESTED_TAG: ${{ inputs.source_tag }}
+          FORCE_REBUILD: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          revision=${REQUESTED_REVISION:-}
+          if [[ -z $revision ]]; then
+            revision=$(<packaging/revision)
+          fi
+
+          tag=${REQUESTED_TAG:-}
+          if [[ -n $tag ]]; then
+            if [[ ! $tag =~ ^b[0-9]+$ ]]; then
+              echo "Only ordinary llama.cpp b<number> releases are supported" >&2
+              exit 1
+            fi
+            source_release=$(gh api "repos/${SOURCE_REPOSITORY}/releases/tags/${tag}")
+            if [[ $(jq -r '.draft or .prerelease' <<<"$source_release") == true ]]; then
+              echo "Source release must be published and non-prerelease: $tag" >&2
+              exit 1
+            fi
+          else
+            source_release=$(gh api "repos/${SOURCE_REPOSITORY}/releases?per_page=100" \
+              --jq '[.[] | select((.draft or .prerelease) == false) | select(.tag_name | test("^b[0-9]+$"))] | max_by(.tag_name[1:] | tonumber)')
+            tag=$(jq -r '.tag_name // empty' <<<"$source_release")
+            if [[ -z $tag ]]; then
+              echo "No ordinary llama.cpp b<number> release was found" >&2
+              exit 1
+            fi
+          fi
+
+          version=$(scripts/debian-version.sh "$tag" "$revision")
+          published_at=$(jq -r '.published_at' <<<"$source_release")
+          published_epoch=$(date -u -d "$published_at" +%s)
+
+          source_assets=$(jq -r '.assets[].name' <<<"$source_release")
+          expected_source_assets=(
+            "llama-${tag}-bin-ubuntu-vulkan-x64.tar.gz"
+            "llama-${tag}-bin-ubuntu-cuda13-x64.tar.gz"
+          )
+          for asset in "${expected_source_assets[@]}"; do
+            if ! grep -Fxq "$asset" <<<"$source_assets"; then
+              echo "Source release $tag is missing $asset" >&2
+              exit 1
+            fi
+          done
+
+          expected_target_assets=(
+            "llama-cpp-amd64_${version}_amd64.deb"
+            "llama-cpp-cuda-amd64_${version}_amd64.deb"
+          )
+          should_build=true
+          if [[ ${FORCE_REBUILD:-false} != true ]] && \
+             target_assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+               --json assets --jq '.assets[].name' 2>/dev/null); then
+            should_build=false
+            for asset in "${expected_target_assets[@]}"; do
+              if ! grep -Fxq "$asset" <<<"$target_assets"; then
+                should_build=true
+              fi
+            done
+          fi
+
+          {
+            echo "package_revision=$revision"
+            echo "published_epoch=$published_epoch"
+            echo "should_build=$should_build"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >>"$GITHUB_OUTPUT"
+
+          echo "Source tag: $tag"
+          echo "Debian version: $version"
+          echo "Build required: $should_build"
+
+  build:
+    name: Build ${{ matrix.package }}
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: vulkan
+            package: llama-cpp-amd64
+            source_asset: llama-${{ needs.resolve.outputs.tag }}-bin-ubuntu-vulkan-x64.tar.gz
+          - flavor: cuda
+            package: llama-cpp-cuda-amd64
+            source_asset: llama-${{ needs.resolve.outputs.tag }}-bin-ubuntu-cuda13-x64.tar.gz
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download source build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ needs.resolve.outputs.tag }}" \
+            --repo "$SOURCE_REPOSITORY" \
+            --pattern "${{ matrix.source_asset }}" \
+            --dir source
+
+      - name: Build Debian package
+        env:
+          SOURCE_DATE_EPOCH: ${{ needs.resolve.outputs.published_epoch }}
+        run: |
+          scripts/build-deb.sh \
+            --tag "${{ needs.resolve.outputs.tag }}" \
+            --revision "${{ needs.resolve.outputs.package_revision }}" \
+            --flavor "${{ matrix.flavor }}" \
+            --archive "source/${{ matrix.source_asset }}" \
+            --output-dir dist
+
+      - name: Verify metadata, contents, and licenses
+        env:
+          DEB: dist/${{ matrix.package }}_${{ needs.resolve.outputs.version }}_amd64.deb
+          PACKAGE: ${{ matrix.package }}
+          SOURCE_ARCHIVE: source/${{ matrix.source_asset }}
+          SOURCE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(dpkg-deb -f "$DEB" Package)" = "$PACKAGE"
+          test "$(dpkg-deb -f "$DEB" Version)" = "${{ needs.resolve.outputs.version }}"
+          test "$(dpkg-deb -f "$DEB" Architecture)" = amd64
+          test "$(dpkg-deb -f "$DEB" X-Upstream-Tag)" = "$SOURCE_TAG"
+
+          mkdir verify
+          dpkg-deb -x "$DEB" verify
+          test -x verify/usr/lib/llama-cpp/llama-cli
+          test -x verify/usr/lib/llama-cpp/llama-server
+          test -L verify/usr/bin/llama-cli
+          test -L verify/usr/bin/llama-server
+          tar -xOf "$SOURCE_ARCHIVE" "llama-${SOURCE_TAG}/LICENSE" >upstream-license
+          cmp upstream-license verify/usr/lib/llama-cpp/LICENSE
+          cmp upstream-license "verify/usr/share/doc/${PACKAGE}/copyright"
+          cmp LICENSE "verify/usr/share/doc/${PACKAGE}/copyright.packaging"
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.package }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  release:
+    name: Publish Debian packages
+    needs:
+      - resolve
+      - build
+    if: needs.resolve.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download Debian packages
+        uses: actions/download-artifact@v7
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create checksums and release notes
+        env:
+          SOURCE_TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum ./*.deb >SHA256SUMS
+          cat >RELEASE_NOTES.md <<EOF
+          Debian packages repackaged from the ordinary llama.cpp **${SOURCE_TAG}** amd64 builds.
+
+          - \`llama-cpp-amd64\`: CPU variants plus Vulkan
+          - \`llama-cpp-cuda-amd64\`: CPU variants plus CUDA 13.2
+          - Debian version: \`${VERSION}\`
+          - Source release: https://github.com/${SOURCE_REPOSITORY}/releases/tag/${SOURCE_TAG}
+
+          The upstream llama.cpp license is preserved inside each package at both
+          \`/usr/lib/llama-cpp/LICENSE\` and the Debian-standard copyright path.
+          EOF
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$SOURCE_TAG" release/*.deb release/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "llama.cpp ${SOURCE_TAG} Debian packages" \
+              --notes-file release/RELEASE_NOTES.md
+          else
+            gh release create "$SOURCE_TAG" release/*.deb release/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "llama.cpp ${SOURCE_TAG} Debian packages" \
+              --notes-file release/RELEASE_NOTES.md
+          fi
