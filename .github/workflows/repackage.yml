@@ -1,4 +1,4 @@
-name: Repackage llama.cpp amd64 builds
+name: Repackage llama.cpp Debian builds
 
 on:
   schedule:
@@ -20,7 +20,7 @@ on:
         type: boolean
 
 concurrency:
-  group: repackage-llama-cpp-amd64
+  group: repackage-llama-cpp-debs
   cancel-in-progress: false
 
 permissions:
@@ -89,6 +89,8 @@ jobs:
           expected_source_assets=(
             "llama-${tag}-bin-ubuntu-vulkan-x64.tar.gz"
             "llama-${tag}-bin-ubuntu-cuda13-x64.tar.gz"
+            "llama-${tag}-bin-debian-trixie-vulkan-arm64.tar.gz"
+            "llama-${tag}-bin-debian-trixie-cuda13-arm64.tar.gz"
           )
           for asset in "${expected_source_assets[@]}"; do
             if ! grep -Fxq "$asset" <<<"$source_assets"; then
@@ -98,8 +100,10 @@ jobs:
           done
 
           expected_target_assets=(
-            "llama-cpp-amd64_${version}_amd64.deb"
-            "llama-cpp-cuda-amd64_${version}_amd64.deb"
+            "llama-cpp_${version}_amd64.deb"
+            "llama-cpp-cuda_${version}_amd64.deb"
+            "llama-cpp_${version}_arm64.deb"
+            "llama-cpp-cuda_${version}_arm64.deb"
           )
           should_build=true
           if [[ ${FORCE_REBUILD:-false} != true ]] && \
@@ -126,7 +130,7 @@ jobs:
           echo "Build required: $should_build"
 
   build:
-    name: Build ${{ matrix.package }}
+    name: Build ${{ matrix.package }} (${{ matrix.architecture }})
     needs: resolve
     if: needs.resolve.outputs.should_build == 'true'
     runs-on: ubuntu-24.04
@@ -134,12 +138,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - flavor: vulkan
-            package: llama-cpp-amd64
+          - architecture: amd64
+            flavor: vulkan
+            package: llama-cpp
             source_asset: llama-${{ needs.resolve.outputs.tag }}-bin-ubuntu-vulkan-x64.tar.gz
-          - flavor: cuda
-            package: llama-cpp-cuda-amd64
+          - architecture: amd64
+            flavor: cuda
+            package: llama-cpp-cuda
             source_asset: llama-${{ needs.resolve.outputs.tag }}-bin-ubuntu-cuda13-x64.tar.gz
+          - architecture: arm64
+            flavor: vulkan
+            package: llama-cpp
+            source_asset: llama-${{ needs.resolve.outputs.tag }}-bin-debian-trixie-vulkan-arm64.tar.gz
+          - architecture: arm64
+            flavor: cuda
+            package: llama-cpp-cuda
+            source_asset: llama-${{ needs.resolve.outputs.tag }}-bin-debian-trixie-cuda13-arm64.tar.gz
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -160,13 +174,14 @@ jobs:
           scripts/build-deb.sh \
             --tag "${{ needs.resolve.outputs.tag }}" \
             --revision "${{ needs.resolve.outputs.package_revision }}" \
+            --architecture "${{ matrix.architecture }}" \
             --flavor "${{ matrix.flavor }}" \
             --archive "source/${{ matrix.source_asset }}" \
             --output-dir dist
 
       - name: Verify metadata, contents, and licenses
         env:
-          DEB: dist/${{ matrix.package }}_${{ needs.resolve.outputs.version }}_amd64.deb
+          DEB: dist/${{ matrix.package }}_${{ needs.resolve.outputs.version }}_${{ matrix.architecture }}.deb
           PACKAGE: ${{ matrix.package }}
           SOURCE_ARCHIVE: source/${{ matrix.source_asset }}
           SOURCE_TAG: ${{ needs.resolve.outputs.tag }}
@@ -174,7 +189,7 @@ jobs:
           set -euo pipefail
           test "$(dpkg-deb -f "$DEB" Package)" = "$PACKAGE"
           test "$(dpkg-deb -f "$DEB" Version)" = "${{ needs.resolve.outputs.version }}"
-          test "$(dpkg-deb -f "$DEB" Architecture)" = amd64
+          test "$(dpkg-deb -f "$DEB" Architecture)" = "${{ matrix.architecture }}"
           test "$(dpkg-deb -f "$DEB" X-Upstream-Tag)" = "$SOURCE_TAG"
 
           mkdir verify
@@ -191,7 +206,7 @@ jobs:
       - name: Upload Debian package
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.package }}
+          name: ${{ matrix.package }}-${{ matrix.architecture }}
           path: dist/*.deb
           if-no-files-found: error
 
@@ -218,10 +233,12 @@ jobs:
           cd release
           sha256sum ./*.deb >SHA256SUMS
           cat >RELEASE_NOTES.md <<EOF
-          Debian packages repackaged from the ordinary llama.cpp **${SOURCE_TAG}** amd64 builds.
+          Debian packages repackaged from the ordinary llama.cpp **${SOURCE_TAG}** builds.
 
-          - \`llama-cpp-amd64\`: CPU variants plus Vulkan
-          - \`llama-cpp-cuda-amd64\`: CPU variants plus CUDA 13.2
+          - \`llama-cpp_${VERSION}_amd64.deb\`: amd64 CPU variants plus Vulkan
+          - \`llama-cpp-cuda_${VERSION}_amd64.deb\`: amd64 CPU variants plus CUDA 13.2
+          - \`llama-cpp_${VERSION}_arm64.deb\`: arm64 CPU variants plus Vulkan
+          - \`llama-cpp-cuda_${VERSION}_arm64.deb\`: arm64 CPU variants plus CUDA 13.2
           - Debian version: \`${VERSION}\`
           - Source release: https://github.com/${SOURCE_REPOSITORY}/releases/tag/${SOURCE_TAG}
 

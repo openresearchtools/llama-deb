@@ -41,48 +41,61 @@ if ! dpkg --compare-versions 0.0.10453-2 gt 0.0.10453-1; then
   exit 1
 fi
 
-source_root=$temporary_directory/source/llama-b10453
-mkdir -p "$source_root"
-printf '%s\n' 'upstream license fixture' >"$source_root/LICENSE"
-for executable in llama-cli llama-server rpc-server llama-bench; do
-  cp /bin/true "$source_root/$executable"
-done
-cp /bin/true "$source_root/libggml-vulkan.so"
-cp /bin/true "$source_root/libggml-cuda.so"
-tar -czf "$temporary_directory/llama-b10453-test.tar.gz" \
-  -C "$temporary_directory/source" llama-b10453
-
 export SOURCE_DATE_EPOCH=1786942800
-for flavor in vulkan cuda; do
-  output_directory=$temporary_directory/dist-$flavor
-  "$repository_root/scripts/build-deb.sh" \
-    --tag b10453 \
-    --flavor "$flavor" \
-    --archive "$temporary_directory/llama-b10453-test.tar.gz" \
-    --output-dir "$output_directory" \
-    --revision 2
+for architecture in amd64 arm64; do
+  source_root=$temporary_directory/source-$architecture/llama-b10453
+  mkdir -p "$source_root"
+  printf '%s\n' 'upstream license fixture' >"$source_root/LICENSE"
+  for executable in llama-cli llama-server rpc-server llama-bench; do
+    cp /bin/true "$source_root/$executable"
+  done
+  cp /bin/true "$source_root/libggml-vulkan.so"
+  cp /bin/true "$source_root/libggml-cuda.so"
 
-  case $flavor in
-    vulkan) package_name=llama-cpp-amd64 ;;
-    cuda) package_name=llama-cpp-cuda-amd64 ;;
-  esac
-  deb=$output_directory/${package_name}_0.0.10453-2_amd64.deb
-  test -s "$deb"
-  assert_equal "$package_name" "$(dpkg-deb -f "$deb" Package)" "$flavor package name"
-  assert_equal '0.0.10453-2' "$(dpkg-deb -f "$deb" Version)" "$flavor version"
-  assert_equal 'amd64' "$(dpkg-deb -f "$deb" Architecture)" "$flavor architecture"
-  assert_equal 'b10453' "$(dpkg-deb -f "$deb" X-Upstream-Tag)" "$flavor upstream tag"
+  if [[ $architecture == arm64 ]]; then
+    while IFS= read -r -d '' executable; do
+      printf '\267\000' | dd of="$executable" bs=1 seek=18 conv=notrunc status=none
+    done < <(find "$source_root" -type f ! -name LICENSE -print0)
+  fi
 
-  unpacked=$temporary_directory/unpacked-$flavor
-  dpkg-deb -x "$deb" "$unpacked"
-  assert_equal '../lib/llama-cpp/llama-cli' \
-    "$(readlink "$unpacked/usr/bin/llama-cli")" \
-    "$flavor executable link"
-  cmp "$source_root/LICENSE" "$unpacked/usr/lib/llama-cpp/LICENSE"
-  cmp "$source_root/LICENSE" "$unpacked/usr/share/doc/$package_name/copyright"
-  cmp "$repository_root/LICENSE" \
-    "$unpacked/usr/share/doc/$package_name/copyright.packaging"
-  "$unpacked/usr/bin/llama-cli"
+  source_archive=$temporary_directory/llama-b10453-$architecture-test.tar.gz
+  tar -czf "$source_archive" \
+    -C "$temporary_directory/source-$architecture" llama-b10453
+
+  for flavor in vulkan cuda; do
+    output_directory=$temporary_directory/dist-$architecture-$flavor
+    "$repository_root/scripts/build-deb.sh" \
+      --tag b10453 \
+      --architecture "$architecture" \
+      --flavor "$flavor" \
+      --archive "$source_archive" \
+      --output-dir "$output_directory" \
+      --revision 2
+
+    case $flavor in
+      vulkan) package_name=llama-cpp ;;
+      cuda) package_name=llama-cpp-cuda ;;
+    esac
+    deb=$output_directory/${package_name}_0.0.10453-2_${architecture}.deb
+    test -s "$deb"
+    assert_equal "$package_name" "$(dpkg-deb -f "$deb" Package)" "$architecture $flavor package name"
+    assert_equal '0.0.10453-2' "$(dpkg-deb -f "$deb" Version)" "$architecture $flavor version"
+    assert_equal "$architecture" "$(dpkg-deb -f "$deb" Architecture)" "$architecture $flavor architecture"
+    assert_equal 'b10453' "$(dpkg-deb -f "$deb" X-Upstream-Tag)" "$architecture $flavor upstream tag"
+
+    unpacked=$temporary_directory/unpacked-$architecture-$flavor
+    dpkg-deb -x "$deb" "$unpacked"
+    assert_equal '../lib/llama-cpp/llama-cli' \
+      "$(readlink "$unpacked/usr/bin/llama-cli")" \
+      "$architecture $flavor executable link"
+    cmp "$source_root/LICENSE" "$unpacked/usr/lib/llama-cpp/LICENSE"
+    cmp "$source_root/LICENSE" "$unpacked/usr/share/doc/$package_name/copyright"
+    cmp "$repository_root/LICENSE" \
+      "$unpacked/usr/share/doc/$package_name/copyright.packaging"
+    if [[ $architecture == amd64 ]]; then
+      "$unpacked/usr/bin/llama-cli"
+    fi
+  done
 done
 
 echo 'All packaging tests passed.'

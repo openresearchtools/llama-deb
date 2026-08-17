@@ -1,24 +1,33 @@
 # llama-deb
 
-Debian repackaging for the ordinary amd64 releases produced by
+Debian repackaging for the ordinary amd64 and arm64 releases produced by
 [`openresearchtools/llama-cpp-arm64-builds`](https://github.com/openresearchtools/llama-cpp-arm64-builds).
 TurboQuant releases are deliberately excluded.
 
 ## Packages
 
-| Package | Source asset | Backends |
-| --- | --- | --- |
-| `llama-cpp-amd64` | `llama-bNNNN-bin-ubuntu-vulkan-x64.tar.gz` | All bundled CPU variants and Vulkan |
-| `llama-cpp-cuda-amd64` | `llama-bNNNN-bin-ubuntu-cuda13-x64.tar.gz` | All bundled CPU variants and CUDA 13.2 |
+| Package | Architecture | Source asset | Backends |
+| --- | --- | --- | --- |
+| `llama-cpp` | amd64 | `llama-bNNNN-bin-ubuntu-vulkan-x64.tar.gz` | All bundled CPU variants and Vulkan |
+| `llama-cpp-cuda` | amd64 | `llama-bNNNN-bin-ubuntu-cuda13-x64.tar.gz` | All bundled CPU variants and CUDA 13.2 |
+| `llama-cpp` | arm64 | `llama-bNNNN-bin-debian-trixie-vulkan-arm64.tar.gz` | All bundled CPU variants and Vulkan |
+| `llama-cpp-cuda` | arm64 | `llama-bNNNN-bin-debian-trixie-cuda13-arm64.tar.gz` | All bundled CPU variants and CUDA 13.2 |
 
-The packages conflict with and replace one another because they provide the
-same commands. Both provide the virtual package `llama-cpp`. Executables are
-available in `/usr/bin`; the unmodified upstream release contents live together
-in `/usr/lib/llama-cpp` so their `$ORIGIN` runtime paths continue to work.
+The Vulkan and CUDA packages conflict with and replace one another because they
+provide the same commands. `llama-cpp-cuda` also provides the virtual package
+`llama-cpp`. Executables are available in `/usr/bin`; the unmodified upstream
+release contents live together in `/usr/lib/llama-cpp` so their `$ORIGIN`
+runtime paths continue to work.
 
-These are Ubuntu 24.04 amd64 binary repackages, not source builds. The Vulkan
-package declares its Vulkan loader dependency. The CUDA package declares the
-CUDA 13.2 runtime packages from NVIDIA's Ubuntu 24.04 repository; a compatible
+Architecture belongs in Debian's `Architecture` field and the final filename,
+not in the package name. This avoids redundant names such as
+`llama-cpp-amd64_<version>_amd64.deb`. Correct filenames are, for example,
+`llama-cpp_<version>_amd64.deb` and `llama-cpp_<version>_arm64.deb`.
+
+These are binary repackages, not source builds. The amd64 files come from the
+Ubuntu 24.04 builds; arm64 files come from the Debian Trixie builds. The Vulkan
+packages declare their Vulkan loader dependency. The CUDA packages declare the
+CUDA 13.2 runtime packages from NVIDIA's matching repository; a compatible
 NVIDIA driver that provides `libcuda.so.1` is also required.
 
 ## APT-safe versions
@@ -48,10 +57,10 @@ releases and normal `apt update` plus `apt upgrade` will select newer builds.
 UTC and can also be run manually. It:
 
 1. Selects the numerically largest published, non-prerelease `b<number>` release.
-2. Verifies both ordinary amd64 source assets exist and skips work when both
-   expected `.deb` assets are already published.
-3. Builds and validates the Vulkan and CUDA packages independently.
-4. Publishes both packages and `SHA256SUMS` on a release with the upstream tag.
+2. Verifies all four ordinary amd64/arm64 source assets exist and skips work
+   when all four expected `.deb` assets are already published.
+3. Builds and validates every architecture/backend package independently.
+4. Publishes all four packages and `SHA256SUMS` on a release with the upstream tag.
 
 Manual runs can select a source tag, override the packaging revision, or force
 replacement of same-named assets. Only `b<number>` tags are accepted, so a
@@ -59,11 +68,12 @@ replacement of same-named assets. Only `b<number>` tags are accepted, so a
 
 ## Build locally
 
-On an amd64 Debian-family system with `dpkg-deb`, `file`, `gzip`, and `tar`:
+On a Debian-family system with `dpkg-deb`, `file`, `gzip`, and `tar`:
 
 ```bash
 scripts/build-deb.sh \
   --tag b10453 \
+  --architecture amd64 \
   --flavor vulkan \
   --archive llama-b10453-bin-ubuntu-vulkan-x64.tar.gz
 ```

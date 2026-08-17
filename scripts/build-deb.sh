@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage: build-deb.sh --tag TAG --flavor vulkan|cuda --archive FILE [options]
+Usage: build-deb.sh --tag TAG --architecture amd64|arm64 --flavor vulkan|cuda --archive FILE [options]
 
 Options:
   --output-dir DIR       Output directory (default: dist)
@@ -13,6 +13,7 @@ EOF
 }
 
 tag=
+architecture=
 flavor=
 archive=
 output_dir=dist
@@ -26,6 +27,10 @@ while (( $# > 0 )); do
       ;;
     --flavor)
       flavor=${2:-}
+      shift 2
+      ;;
+    --architecture)
+      architecture=${2:-}
       shift 2
       ;;
     --archive)
@@ -52,7 +57,7 @@ while (( $# > 0 )); do
   esac
 done
 
-if [[ -z $tag || -z $flavor || -z $archive ]]; then
+if [[ -z $tag || -z $architecture || -z $flavor || -z $archive ]]; then
   usage
   exit 2
 fi
@@ -72,22 +77,39 @@ if [[ -z $revision ]]; then
 fi
 version=$("$script_dir/debian-version.sh" "$tag" "$revision")
 
+case $architecture in
+  amd64)
+    executable_format='ELF 64-bit LSB.*x86-64'
+    source_platform='Ubuntu 24.04 amd64'
+    ;;
+  arm64)
+    executable_format='ELF 64-bit LSB.*ARM aarch64'
+    source_platform='Debian Trixie arm64'
+    ;;
+  *)
+    echo "Unsupported architecture '$architecture'; expected amd64 or arm64" >&2
+    exit 2
+    ;;
+esac
+
 case $flavor in
   vulkan)
-    package_name=llama-cpp-amd64
-    conflicting_package=llama-cpp-cuda-amd64
+    package_name=llama-cpp
+    conflicting_package='llama-cpp-cuda, llama-cpp-amd64, llama-cpp-arm64'
+    provides_field='Provides: llama-cpp-vulkan'
     backend_library=libggml-vulkan.so
     runtime_field='Depends: libc6 (>= 2.38), libgcc-s1 (>= 3.4), libgomp1 (>= 6), libstdc++6 (>= 13.1), libvulkan1 (>= 1.2.131.2)'
     package_summary='llama.cpp command-line tools with CPU and Vulkan backends'
-    package_detail='This package contains the ordinary Ubuntu amd64 llama.cpp build with all bundled CPU variants, the Vulkan backend, tools, server, and RPC server.'
+    package_detail="This package contains the ordinary $source_platform llama.cpp build with all bundled CPU variants, the Vulkan backend, tools, server, and RPC server."
     ;;
   cuda)
-    package_name=llama-cpp-cuda-amd64
-    conflicting_package=llama-cpp-amd64
+    package_name=llama-cpp-cuda
+    conflicting_package='llama-cpp, llama-cpp-cuda-amd64, llama-cpp-cuda-arm64'
+    provides_field='Provides: llama-cpp'
     backend_library=libggml-cuda.so
     runtime_field='Depends: libc6 (>= 2.38), libgcc-s1 (>= 3.4), libgomp1 (>= 6), libstdc++6 (>= 13.1), cuda-cudart-13-2, libcublas-13-2'
     package_summary='llama.cpp command-line tools with CPU and CUDA 13 backends'
-    package_detail='This package contains the ordinary Ubuntu amd64 llama.cpp CUDA 13 build with all bundled CPU variants, tools, server, and RPC server. An NVIDIA driver providing libcuda.so.1 is also required at runtime.'
+    package_detail="This package contains the ordinary $source_platform llama.cpp CUDA 13 build with all bundled CPU variants, tools, server, and RPC server. An NVIDIA driver providing libcuda.so.1 is also required at runtime."
     ;;
   *)
     echo "Unsupported flavor '$flavor'; expected vulkan or cuda" >&2
@@ -131,8 +153,8 @@ for required_file in LICENSE llama-cli llama-server rpc-server "$backend_library
   fi
 done
 
-if ! file "$source_directory/llama-cli" | grep -q 'ELF 64-bit LSB.*x86-64'; then
-  echo "The source archive does not contain amd64 Linux binaries" >&2
+if ! file "$source_directory/llama-cli" | grep -q "$executable_format"; then
+  echo "The source archive does not contain $architecture Linux binaries" >&2
   exit 1
 fi
 
@@ -174,13 +196,13 @@ Package: $package_name
 Version: $version
 Section: utils
 Priority: optional
-Architecture: amd64
+Architecture: $architecture
 Maintainer: OpenResearchTools <openresearchtools@users.noreply.github.com>
 Homepage: https://github.com/ggml-org/llama.cpp
 $runtime_field
 Conflicts: $conflicting_package
 Replaces: $conflicting_package
-Provides: llama-cpp
+$provides_field
 Installed-Size: $installed_size
 X-Upstream-Repository: https://github.com/ggml-org/llama.cpp
 X-Upstream-Tag: $tag
@@ -197,7 +219,7 @@ changelog_date=$(date -u -d "@$build_epoch" -R)
 cat >"$temporary_directory/changelog.Debian" <<EOF
 $package_name ($version) unstable; urgency=medium
 
-  * Repackage the ordinary upstream llama.cpp $tag amd64 $flavor build.
+  * Repackage the ordinary upstream llama.cpp $tag $architecture $flavor build.
 
  -- OpenResearchTools <openresearchtools@users.noreply.github.com>  $changelog_date
 EOF
@@ -209,7 +231,7 @@ find "$package_root" -print0 \
   | xargs -0 touch --no-dereference --date="@$build_epoch"
 
 mkdir -p "$output_dir"
-output_path=$output_dir/${package_name}_${version}_amd64.deb
+output_path=$output_dir/${package_name}_${version}_${architecture}.deb
 dpkg-deb --root-owner-group --build "$package_root" "$output_path"
 
 echo "Built $output_path"
