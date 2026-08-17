@@ -53,6 +53,19 @@ jobs:
         run: |
           set -euo pipefail
 
+          retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 10))
+              fi
+            done
+            return 1
+          }
+
           revision=${REQUESTED_REVISION:-}
           if [[ -z $revision ]]; then
             revision=$(<packaging/revision)
@@ -65,7 +78,7 @@ jobs:
               exit 1
             fi
           else
-            tag=$(gh release list --repo "$SOURCE_REPOSITORY" --limit 100 \
+            tag=$(retry gh release list --repo "$SOURCE_REPOSITORY" --limit 100 \
               --exclude-drafts --exclude-pre-releases --json tagName \
               --jq '[.[] | select(.tagName | test("^b[0-9]+$"))] | max_by(.tagName[1:] | tonumber) | .tagName // empty')
             if [[ -z $tag ]]; then
@@ -74,7 +87,7 @@ jobs:
             fi
           fi
 
-          source_release=$(gh release view "$tag" --repo "$SOURCE_REPOSITORY" \
+          source_release=$(retry gh release view "$tag" --repo "$SOURCE_REPOSITORY" \
             --json assets,isDraft,isPrerelease,publishedAt,tagName)
           if [[ $(jq -r '.isDraft or .isPrerelease' <<<"$source_release") == true ]]; then
             echo "Source release must be published and non-prerelease: $tag" >&2
@@ -162,10 +175,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "${{ needs.resolve.outputs.tag }}" \
-            --repo "$SOURCE_REPOSITORY" \
-            --pattern "${{ matrix.source_asset }}" \
-            --dir source
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            rm -f "source/${{ matrix.source_asset }}"
+            if gh release download "${{ needs.resolve.outputs.tag }}" \
+              --repo "$SOURCE_REPOSITORY" \
+              --pattern "${{ matrix.source_asset }}" \
+              --dir source; then
+              exit 0
+            fi
+            if (( attempt < 3 )); then
+              sleep $((attempt * 10))
+            fi
+          done
+          exit 1
 
       - name: Build Debian package
         env:
