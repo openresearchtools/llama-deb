@@ -64,23 +64,25 @@ jobs:
               echo "Only ordinary llama.cpp b<number> releases are supported" >&2
               exit 1
             fi
-            source_release=$(gh api "repos/${SOURCE_REPOSITORY}/releases/tags/${tag}")
-            if [[ $(jq -r '.draft or .prerelease' <<<"$source_release") == true ]]; then
-              echo "Source release must be published and non-prerelease: $tag" >&2
-              exit 1
-            fi
           else
-            source_release=$(gh api "repos/${SOURCE_REPOSITORY}/releases?per_page=100" \
-              --jq '[.[] | select((.draft or .prerelease) == false) | select(.tag_name | test("^b[0-9]+$"))] | max_by(.tag_name[1:] | tonumber)')
-            tag=$(jq -r '.tag_name // empty' <<<"$source_release")
+            tag=$(gh release list --repo "$SOURCE_REPOSITORY" --limit 100 \
+              --exclude-drafts --exclude-pre-releases --json tagName \
+              --jq '[.[] | select(.tagName | test("^b[0-9]+$"))] | max_by(.tagName[1:] | tonumber) | .tagName // empty')
             if [[ -z $tag ]]; then
               echo "No ordinary llama.cpp b<number> release was found" >&2
               exit 1
             fi
           fi
 
+          source_release=$(gh release view "$tag" --repo "$SOURCE_REPOSITORY" \
+            --json assets,isDraft,isPrerelease,publishedAt,tagName)
+          if [[ $(jq -r '.isDraft or .isPrerelease' <<<"$source_release") == true ]]; then
+            echo "Source release must be published and non-prerelease: $tag" >&2
+            exit 1
+          fi
+
           version=$(scripts/debian-version.sh "$tag" "$revision")
-          published_at=$(jq -r '.published_at' <<<"$source_release")
+          published_at=$(jq -r '.publishedAt' <<<"$source_release")
           published_epoch=$(date -u -d "$published_at" +%s)
 
           source_assets=$(jq -r '.assets[].name' <<<"$source_release")
