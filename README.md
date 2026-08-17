@@ -10,7 +10,7 @@ For the first Open Research Tools installation on a system, this one command
 adds the archive key and repository and installs the Vulkan package:
 
 ```sh
-wget -qO /tmp/openresearchtools-archive-keyring.deb https://apt.openresearchtools.com/apt/releases/download/repo/openresearchtools-archive-keyring.deb && sudo apt install -y /tmp/openresearchtools-archive-keyring.deb && sudo apt update && sudo apt install -y llama-cpp
+wget -qO /tmp/keyring.deb https://keyring.openresearchtools.com && sudo apt install -y /tmp/keyring.deb && sudo apt update && sudo apt install -y llama-cpp
 ```
 
 If the Open Research Tools APT repository is already configured:
@@ -25,7 +25,7 @@ The CUDA build is an alternative package, not an additional package. For a
 first Open Research Tools installation using CUDA:
 
 ```sh
-wget -qO /tmp/openresearchtools-archive-keyring.deb https://apt.openresearchtools.com/apt/releases/download/repo/openresearchtools-archive-keyring.deb && sudo apt install -y /tmp/openresearchtools-archive-keyring.deb && sudo apt update && sudo apt install -y llama-cpp-cuda
+wget -qO /tmp/keyring.deb https://keyring.openresearchtools.com && sudo apt install -y /tmp/keyring.deb && sudo apt update && sudo apt install -y llama-cpp-cuda
 ```
 
 If the repository is already configured:
