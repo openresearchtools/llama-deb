@@ -258,6 +258,44 @@ jobs:
           cat >RELEASE_NOTES.md <<EOF
           Debian packages repackaged from the ordinary llama.cpp **${SOURCE_TAG}** builds.
 
+          <!-- openresearchtools-apt-install:start -->
+          ## Install on Debian 13+ or Ubuntu 24.04/26.04+
+
+          Choose one package; the Vulkan and CUDA variants conflict. APT selects
+          the matching amd64 or arm64 package automatically.
+
+          ### Vulkan
+
+          First Open Research Tools installation:
+
+          \`\`\`bash
+          wget -qO /tmp/keyring.deb https://keyring.openresearchtools.com && sudo apt install -y /tmp/keyring.deb && sudo apt update && sudo apt install -y llama-cpp=${VERSION}
+          \`\`\`
+
+          Repository already configured:
+
+          \`\`\`bash
+          sudo apt update && sudo apt install -y llama-cpp=${VERSION}
+          \`\`\`
+
+          ### CUDA
+
+          Install NVIDIA CUDA 13.x and a compatible NVIDIA driver first. This
+          package does not install NVIDIA's package repository.
+
+          First Open Research Tools installation:
+
+          \`\`\`bash
+          wget -qO /tmp/keyring.deb https://keyring.openresearchtools.com && sudo apt install -y /tmp/keyring.deb && sudo apt update && sudo apt install -y llama-cpp-cuda=${VERSION}
+          \`\`\`
+
+          Repository already configured:
+
+          \`\`\`bash
+          sudo apt update && sudo apt install -y llama-cpp-cuda=${VERSION}
+          \`\`\`
+          <!-- openresearchtools-apt-install:end -->
+
           - \`llama-cpp_${VERSION}_amd64.deb\`: amd64 CPU variants plus Vulkan
           - \`llama-cpp-cuda_${VERSION}_amd64.deb\`: amd64 CPU variants plus CUDA 13.2
           - \`llama-cpp_${VERSION}_arm64.deb\`: arm64 CPU variants plus Vulkan
