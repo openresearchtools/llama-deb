@@ -2,11 +2,11 @@ name: Repackage llama.cpp Debian builds
 
 on:
   schedule:
-    - cron: "23 5 * * 1"
+    - cron: "23 10 * * *"
   workflow_dispatch:
     inputs:
       source_tag:
-        description: Ordinary llama.cpp build tag (for example b10453); blank selects latest
+        description: Ordinary llama.cpp build tag (for example v0.5.0 or b10453); blank selects latest
         required: false
         type: string
       package_revision:
@@ -73,16 +73,16 @@ jobs:
 
           tag=${REQUESTED_TAG:-}
           if [[ -n $tag ]]; then
-            if [[ ! $tag =~ ^b[0-9]+$ ]]; then
-              echo "Only ordinary llama.cpp b<number> releases are supported" >&2
+            if [[ ! $tag =~ ^(b[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "Only ordinary llama.cpp b<number> or v<major>.<minor>.<patch> releases are supported" >&2
               exit 1
             fi
           else
             tag=$(retry gh release list --repo "$SOURCE_REPOSITORY" --limit 100 \
-              --exclude-drafts --exclude-pre-releases --json tagName \
-              --jq '[.[] | select(.tagName | test("^b[0-9]+$"))] | max_by(.tagName[1:] | tonumber) | .tagName // empty')
+              --exclude-drafts --exclude-pre-releases --json tagName,publishedAt \
+              --jq '[.[] | select(.tagName | test("^(b[0-9]+|v[0-9]+\\.[0-9]+\\.[0-9]+)$"))] | max_by(.publishedAt) | .tagName // empty')
             if [[ -z $tag ]]; then
-              echo "No ordinary llama.cpp b<number> release was found" >&2
+              echo "No ordinary llama.cpp build release was found" >&2
               exit 1
             fi
           fi

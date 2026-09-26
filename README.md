@@ -69,18 +69,20 @@ repository.
 
 ## APT-safe versions
 
-An ordinary llama.cpp tag `bNNNN` becomes `0.0.NNNN-R`, where `R` is this
-repository's packaging revision:
+An ordinary llama.cpp tag `bNNNN` becomes `0.0.NNNN-R`, and a versioned tag
+`vX.Y.Z` becomes `X.Y.Z-R`, where `R` is this repository's packaging revision:
 
 | llama.cpp tag | Packaging revision | Debian version |
 | --- | ---: | --- |
 | `b10453` | 1 | `0.0.10453-1` |
 | `b10453` | 2 | `0.0.10453-2` |
 | `b10470` | 1 | `0.0.10470-1` |
+| `v0.5.0` | 2 | `0.5.0-2` |
 
-This ordering gives APT the intended behavior: a larger upstream build always
-upgrades a smaller build, and a larger packaging revision upgrades a previous
-repackage of the same build. The current packaging revision is stored in
+This ordering lets APT upgrade from the old `b` packages to the newer `v`
+releases. Within each tag format, newer releases supersede older ones, and a
+larger packaging revision upgrades a previous repackage of the same release.
+The current packaging revision is stored in
 [`packaging/revision`](packaging/revision). Increment it when the package layout
 or metadata changes and existing upstream builds need to be republished.
 
@@ -90,18 +92,18 @@ releases and normal `apt update` plus `apt upgrade` will select newer builds.
 
 ## Automation
 
-[`repackage.yml`](.github/workflows/repackage.yml) runs every Monday at 05:23
+[`repackage.yml`](.github/workflows/repackage.yml) runs daily at 10:23
 UTC and can also be run manually. It:
 
-1. Selects the numerically largest published, non-prerelease `b<number>` release.
+1. Selects the most recently published, non-prerelease `b<number>` or `vX.Y.Z` release.
 2. Verifies all four ordinary amd64/arm64 source assets exist and skips work
    when all four expected `.deb` assets are already published.
 3. Builds and validates every architecture/backend package independently.
 4. Publishes all four packages and `SHA256SUMS` on a release with the upstream tag.
 
 Manual runs can select a source tag, override the packaging revision, or force
-replacement of same-named assets. Only `b<number>` tags are accepted, so a
-`turbo-*` release cannot be packaged accidentally.
+replacement of same-named assets. Only ordinary `b<number>` and `vX.Y.Z` tags
+are accepted, so a `turbo-*` release cannot be packaged accidentally.
 
 ## Build locally
 
